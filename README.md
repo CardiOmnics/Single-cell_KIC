@@ -46,7 +46,7 @@ All scripts are orchestrated by `run_pipeline.R`.
 
 - Plate maps and troponin-I measurements are shipped in `1_data/`.
 - Processed per-cell data (six `.rds` files) ships in `3_output/processed/` so step 5 can run without the raw data.
-- Raw CyteSeer single-cell trace exports (tens of GB) are archived on Zenodo — see `1_data/README.md` for the DOI.
+- Raw CyteSeer single-cell trace exports are archived on Zenodo — see `1_data/README.md` for the DOI.
 
 ## Citation
 
