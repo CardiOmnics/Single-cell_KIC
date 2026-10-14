@@ -41,9 +41,9 @@ contr_well_qc_gate <- contr_cell_params_qc %>%
   mutate(
     well_qc_pass   = n_good_paced >= min_good_paced,
     qc_fail_reason = case_when(
-      n_manually_excluded == n_total ~ "manually excluded",
       !well_qc_pass ~ sprintf("n_good_paced = %d (< %d)",
                                n_good_paced, min_good_paced),
+      n_manually_excluded == n_total ~ "manually excluded",
       TRUE ~ NA_character_
     ),
     modality       = "Contraction"
@@ -255,7 +255,10 @@ if (nrow(calib_trace_df) > 0) {
 
 # ---- Publication trace gallery ----------------------------------------------
 cat("  Generating trace gallery...\n")
-dir.create(file.path(main_dir, "Figures"), showWarnings = FALSE, recursive = TRUE)
+if (!exists("expl_dir"))
+  expl_dir <- file.path(main_dir, "Figures", "Exploratory")
+gallery_dir <- file.path(expl_dir, "trace_galleries")
+dir.create(gallery_dir, showWarnings = FALSE, recursive = TRUE)
 gallery_colors <- c("good_paced" = "#2166AC", "irregular" = "#D95F02")
 gallery_well_pick <- contr_cell_params_qc %>%
   filter(signal_class == "good_paced") %>%
@@ -300,7 +303,7 @@ for (w in seq_len(nrow(gallery_well_pick))) {
     theme_project() +
     theme(strip.text = element_text(size = 6), legend.position = "bottom")
   safe_wuid <- gsub("[^A-Za-z0-9_.]", "_", wuid)
-  pdf_path  <- file.path(main_dir, "Figures",
+  pdf_path  <- file.path(gallery_dir,
     paste0("trace_gallery_contraction_", safe_wuid, "_", analysis_date, ".pdf"))
   cairo_pdf(pdf_path, width = 14, height = 12)
   print(p)

@@ -1,0 +1,26 @@
+# R / RStudio session state
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# macOS
+.DS_Store
+
+# Manuscript working files (not for GitHub)
+*.docx
+*.pptx
+*.xlsx
+
+# Pipeline outputs (regenerated on every run)
+3_output/processed/
+3_output/Figures/
+3_output/Tables/
+3_output/QC/
+3_output/Boxplots/
+3_output/SingleCell/
+
+# Raw CyteSeer exports and processed RDS files (archived on Zenodo — see 1_data/README.md)
+1_data/Calcium/
+1_data/Contraction/

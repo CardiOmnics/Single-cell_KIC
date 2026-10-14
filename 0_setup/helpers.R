@@ -44,28 +44,57 @@ relabel_cell_line_table <- function(df, col = "Cell_Line") {
   df
 }
 
+# -----------------------------------------------------------------------------
+# Data loading functions
+# -----------------------------------------------------------------------------
+
+# Loading runs via an explicit manifest — one row per well, pointing at that
+# well's Primary_DataTable.csv.
+build_cyteseer_manifest <- function(cyteseer_dirs) {
+  purrr::pmap_dfr(
+    list(cyteseer_dirs$root_dir, cyteseer_dirs$plate_id),
+    function(root_dir, plate_id) {
+      if (!dir.exists(root_dir)) {
+        warning("Directory does not exist: ", root_dir)
+        return(NULL)
+      }
+      all_csv <- list.files(path = root_dir, pattern = "\\.csv$",
+                            recursive = TRUE, full.names = TRUE)
+      files <- all_csv[grepl("Primary_DataTable\\.csv$", basename(all_csv),
+                             ignore.case = TRUE)]
+      if (length(files) == 0) {
+        warning("No Primary_DataTable.csv files found in: ", root_dir)
+        return(NULL)
+      }
+      tibble::tibble(Plate = plate_id,
+                     Well  = basename(dirname(files)),
+                     file  = files)
+    }
+  )
+}
+
+read_cyteseer_manifest <- function(manifest, skip = 71) {
+  purrr::pmap_dfr(
+    list(manifest$file, manifest$Plate, manifest$Well),
+    function(f, plate, well) {
+      df <- read.csv(f, skip = skip, header = TRUE, fill = TRUE,
+                     check.names = TRUE)
+      df$Plate       <- plate
+      df$Well        <- well
+      df$source_file <- f
+      df
+    }
+  )
+}
+
+# Read one CyteSeer results folder. Kept for standalone / interactive use;
+# the pipeline goes through load_and_merge_cyteseer().
 read_cyteseer_singlecell <- function(root_dir, plate_id, skip = 71) {
-  if (!dir.exists(root_dir)) {
-    warning("Directory does not exist: ", root_dir)
-    return(NULL)
-  }
-  all_csv <- list.files(path = root_dir, pattern = "\\.csv$",
-                        recursive = TRUE, full.names = TRUE)
-  files <- all_csv[grepl("Primary_DataTable\\.csv$", basename(all_csv),
-                         ignore.case = TRUE)]
-  if (length(files) == 0) {
-    warning("No Primary_DataTable.csv files found in: ", root_dir)
-    return(NULL)
-  }
-  purrr::map_dfr(files, function(f) {
-    well <- basename(dirname(f))
-    df <- read.csv(f, skip = skip, header = TRUE, fill = TRUE,
-                   check.names = TRUE)
-    df$Plate       <- plate_id
-    df$Well        <- well
-    df$source_file <- f
-    df
-  })
+  manifest <- build_cyteseer_manifest(
+    tibble::tibble(root_dir = root_dir, plate_id = plate_id)
+  )
+  if (nrow(manifest) == 0) return(NULL)
+  read_cyteseer_manifest(manifest, skip = skip)
 }
 
 load_plate_maps <- function() {
@@ -90,10 +119,9 @@ load_plate_maps <- function() {
 }
 
 load_and_merge_cyteseer <- function(cyteseer_dirs, plate_map_all, skip = 71) {
-  singlecell_raw <- purrr::pmap_dfr(
-    list(cyteseer_dirs$root_dir, cyteseer_dirs$plate_id),
-    ~ read_cyteseer_singlecell(..1, ..2, skip = skip)
-  )
+  manifest <- build_cyteseer_manifest(cyteseer_dirs)
+
+  singlecell_raw <- read_cyteseer_manifest(manifest, skip = skip)
 
   cat("  Raw rows loaded:", nrow(singlecell_raw), "\n")
 

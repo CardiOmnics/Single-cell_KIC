@@ -4,7 +4,7 @@
 #
 # Loads its OWN data from 1_data/Calcium/ (2 dirs: 1.6, 1.6.24)
 # Uses shared helpers from 0_setup/helpers.R:
-#   read_cyteseer_singlecell, load_plate_maps, load_and_merge_cyteseer
+#   load_plate_maps, load_and_merge_cyteseer
 # Extracts calcium params + Cell.Area + Nucleus.Area + NC_ratio
 #
 # Expects in global env:
@@ -68,6 +68,17 @@ if (length(valid_idx) == 0) stop("No valid calcium parameters found - check trac
 
 ca_param_names <- names(ca_results[[valid_idx[1]]]$params)
 
+# CyteSeer's own per-cell "is Responder" flag (does this cell have a detectable
+# transient at all). Carried through so run_pipeline.R can gate wells on the
+# fraction of responding cells — a signal-quality measure computed by the
+# instrument software, independent of the trace analysis in this script.
+resp_col <- "Ci.on.Cm.API.is.Responder"
+if (!resp_col %in% names(singlecell)) {
+  stop("Column '", resp_col, "' not found in the CyteSeer export. It is needed ",
+       "for the well-level responder QC gate in run_pipeline.R.")
+}
+responder_flag <- tolower(trimws(as.character(singlecell[[resp_col]]))) %in% "true"
+
 ca_cell_params <- do.call(rbind, lapply(seq_along(ca_results), function(i) {
   res <- ca_results[[i]]
   if (is.null(res) || is.null(res$params)) {
@@ -86,6 +97,7 @@ ca_cell_params <- do.call(rbind, lapply(seq_along(ca_results), function(i) {
     Cell.Area    = singlecell$Area.Cm[i] * px_size_um^2,
     Nucleus.Area = singlecell$Area.Nm[i] * px_size_um^2,
     NC_ratio     = singlecell$Area.Nm[i] / (singlecell$Area.Cm[i] + 1e-6),
+    is_responder = responder_flag[i],
     params,
     row.names = NULL
   )
@@ -199,7 +211,7 @@ if (nrow(trace_df) > 0) {
 # --- 5b. AC1 distribution with Otsu threshold ---
 cat("    Plotting AC1 distribution...\n")
 
-class_colors <- c(good_paced = "#2166AC", irregular = "#D95F02")
+class_colors <- c(good_paced = "#0072B2", irregular = "#D55E00")
 
 p_ac1 <- ca_cell_params_qc %>%
   filter(is.finite(ac1)) %>%
@@ -451,7 +463,10 @@ if (nrow(calib_trace_df) > 0) {
 
 cat("  Generating trace gallery...\n")
 
-dir.create(file.path(main_dir, "Figures"), showWarnings = FALSE, recursive = TRUE)
+if (!exists("expl_dir"))
+  expl_dir <- file.path(main_dir, "Figures", "Exploratory")
+gallery_dir <- file.path(expl_dir, "trace_galleries")
+dir.create(gallery_dir, showWarnings = FALSE, recursive = TRUE)
 
 ## Pick 5 representative wells (top 3 per cell line, then trim to 5) ----------
 gallery_well_pick <- ca_cell_params_qc %>%
@@ -464,8 +479,8 @@ gallery_well_pick <- ca_cell_params_qc %>%
 
 set.seed(123)
 
-gallery_colors <- c("good_paced" = "#2166AC",
-                    "irregular"  = "#D95F02")
+gallery_colors <- c("good_paced" = "#0072B2",
+                    "irregular"  = "#D55E00")
 
 ## One PDF per well, 16 traces each (4 cols x 4 rows) ----------------------
 for (w in seq_len(nrow(gallery_well_pick))) {
@@ -519,7 +534,7 @@ for (w in seq_len(nrow(gallery_well_pick))) {
 
   safe_wuid <- gsub("[^A-Za-z0-9_.]", "_", wuid)
   pdf_path  <- file.path(
-    main_dir, "Figures",
+    gallery_dir,
     paste0("trace_gallery_calcium_", safe_wuid,
            "_", analysis_date, ".pdf")
   )

@@ -1,15 +1,47 @@
 # =============================================================================
 # cluster_helpers.R
 # Helper functions for subpopulation (k-means) clustering analysis.
-# Sourced by 4_plot_and_stats.R and figure_calcium_clusters.R.
+# Sourced by 2_analysis/5_plot_and_stats.R.
 # Requires: tidyverse, ggplot2, theme_project(), group_colors (from setup files)
 # =============================================================================
+
+# Renumber k-means clusters by a fixed, data-defined rule.
+# label_rule: list of list(label = <int>, var = <column>, pick = "max"/"min"),
+# applied in order to the cluster centres in original units; each step gives
+# `label` to the not-yet-labelled cluster with the highest (or lowest) centre
+# on `var`. Clusters left over get the remaining labels by decreasing size.
+# With label_rule = NULL all clusters are numbered by decreasing size.
+relabel_kmeans <- function(km_fit, clust_mat, label_rule = NULL) {
+  k <- nrow(km_fit$centers)
+  centers_orig <- sweep(sweep(km_fit$centers, 2, attr(clust_mat, "scaled:scale"), "*"),
+                        2, attr(clust_mat, "scaled:center"), "+")
+  new_of_old <- rep(NA_integer_, k)
+  for (r in label_rule) {
+    free <- which(is.na(new_of_old))
+    if (!length(free) || r$label %in% new_of_old) next
+    v <- centers_orig[free, r$var]
+    pick <- if (identical(r$pick, "min")) free[which.min(v)] else free[which.max(v)]
+    new_of_old[pick] <- as.integer(r$label)
+  }
+  free_old <- which(is.na(new_of_old))
+  free_old <- free_old[order(-km_fit$size[free_old])]
+  new_of_old[free_old] <- setdiff(seq_len(k), new_of_old)[seq_along(free_old)]
+  ord <- order(new_of_old)                    # old index for new label 1..k
+  km_fit$cluster <- new_of_old[km_fit$cluster]
+  km_fit$centers <- km_fit$centers[ord, , drop = FALSE]
+  rownames(km_fit$centers) <- seq_len(k)
+  km_fit$size     <- km_fit$size[ord]
+  km_fit$withinss <- km_fit$withinss[ord]
+  km_fit
+}
 
 # Run k-means subpopulation analysis, produce individual diagnostic plots,
 # and return the ggplot objects so figure assembly scripts can reuse them.
 run_subpop_analysis <- function(data, param_cols, param_labels,
                                 session_label, fig_dir, analysis_date,
-                                k = 3L) {
+                                k = 3L,
+                                cluster_palette = cluster_colors_calcium,
+                                label_rule = NULL) {
 
   # --- Prepare matrix: complete cases, scaled ---
   clust_data <- data %>%
@@ -30,6 +62,10 @@ run_subpop_analysis <- function(data, param_cols, param_labels,
   # --- k-means ---
   set.seed(42)
   km_fit <- kmeans(clust_mat, centers = optimal_k, nstart = 50, iter.max = 200)
+  # k-means numbers clusters arbitrarily: the same partition can come back
+  # as 1/2/3 in a different order when the input row order changes. Renumber
+  # by a fixed rule so cluster names match the manuscript on every run.
+  km_fit <- relabel_kmeans(km_fit, clust_mat, label_rule)
   clust_data$cluster <- factor(km_fit$cluster)
 
   # Print cluster size summary so user can evaluate balance
@@ -77,13 +113,22 @@ run_subpop_analysis <- function(data, param_cols, param_labels,
       cluster = factor(cluster)
     )
 
-  cluster_palette <- c("#2166AC", "#D95F02", "#1B9E77", "#E7298A", "#66A61E", "#7570B3")
+  # cluster_palette arrives as an argument (see 0_setup/colors.R): calcium and
+  # contraction get separate hue families, because their clusters are unrelated.
+  if (length(cluster_palette) < optimal_k) {
+    stop(sprintf(paste0("cluster_palette has %d colours but k = %d. Single-hue ",
+                        "ramps stop separating beyond 4 steps — supply a ",
+                        "re-validated palette rather than recycling colours."),
+                 length(cluster_palette), optimal_k))
+  }
 
   p_profile <- ggplot(profile_long,
                       aes(x = parameter, y = cluster, fill = z_score)) +
     geom_tile(color = "white", linewidth = 0.5) +
     geom_text(aes(label = sprintf("%.1f", z_score)), size = 2.5) +
-    scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+    scale_fill_gradient2(low  = zscore_diverging[["low"]],
+                         mid  = zscore_diverging[["mid"]],
+                         high = zscore_diverging[["high"]],
                          limits = c(-2, 2), oob = scales::squish,
                          name = "Mean z-score") +
     theme_project() +
@@ -149,14 +194,19 @@ run_subpop_analysis <- function(data, param_cols, param_labels,
       total = sum(n),
       pct = 100 * n / total
     ) %>%
-    ungroup()
+    ungroup() %>%
+    # Label ink per segment: these palettes vary in lightness by design, so a
+    # fixed white label is unreadable on the lightest cluster.
+    mutate(label_ink = contrast_ink(cluster_palette[as.integer(cluster)]))
 
   p_comp <- ggplot(composition,
                    aes(x = Condition, y = pct, fill = cluster)) +
     geom_col(position = "stack", width = 0.7, color = "white", linewidth = 0.3) +
-    geom_text(aes(label = ifelse(pct >= 5, sprintf("%.0f%%", pct), "")),
-              position = position_stack(vjust = 0.5), size = 2, color = "white",
+    geom_text(aes(label = ifelse(pct >= 5, sprintf("%.0f%%", pct), ""),
+                  colour = label_ink),
+              position = position_stack(vjust = 0.5), size = 2,
               fontface = "bold") +
+    scale_colour_identity() +
     facet_wrap(~ Cell_Line, nrow = 1, labeller = cell_line_fig_labeller) +
     scale_fill_manual(values = cluster_palette[1:optimal_k],
                       name = "Cluster") +
@@ -277,15 +327,21 @@ run_subpop_analysis <- function(data, param_cols, param_labels,
 plot_cluster_traces <- function(clust_result, cell_params, results_list,
                                 session_label, y_label,
                                 n_per_cluster = 8,
-                                fig_dir, analysis_date) {
+                                fig_dir, analysis_date,
+                                cluster_palette = cluster_colors_calcium) {
   if (is.null(clust_result)) return(invisible(NULL))
 
   clust_data  <- clust_result$clust_data
   clust_mat   <- clust_result$clust_mat
   km_centers  <- clust_result$km_centers
   optimal_k   <- clust_result$optimal_k
-  cluster_palette <- c("#2166AC", "#D95F02", "#1B9E77",
-                       "#E7298A", "#66A61E", "#7570B3")
+  # cluster_palette arrives as an argument — must match the palette used for the
+  # same session in run_subpop_analysis(), or cluster 2 changes colour between
+  # the profile/PCA panels and the trace panel of the same figure.
+  if (length(cluster_palette) < optimal_k) {
+    stop(sprintf("cluster_palette has %d colours but k = %d.",
+                 length(cluster_palette), optimal_k))
+  }
 
   set.seed(42)
   trace_df_all <- bind_rows(lapply(seq_len(optimal_k), function(k) {

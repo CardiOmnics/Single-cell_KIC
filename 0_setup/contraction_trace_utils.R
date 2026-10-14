@@ -6,16 +6,16 @@
 # ---- 1. Parse serialized trace string ----
 parse_trace_string <- function(x) {
   if (is.na(x) || x == "") return(NULL)
-  
+
   x <- gsub("^\\{|\\}$", "", x)
   parts <- strsplit(x, "\\|")[[1]]
-  
+
   header <- strsplit(parts[1], ";")[[1]]
   signal <- as.numeric(strsplit(parts[2], ";")[[1]])
-  
+
   dt_ms <- as.numeric(header[4])
   time_ms <- seq(0, by = dt_ms, length.out = length(signal))
-  
+
   data.frame(
     time_ms = time_ms,
     signal  = signal
@@ -58,70 +58,70 @@ detect_beats <- function(df,
   if (!requireNamespace("pracma", quietly = TRUE)) {
     stop("Package 'pracma' is required for peak detection")
   }
-  
+
   df <- df[!is.na(df$signal_bc), ]
-  
+
   # Need at least a few points
   if (nrow(df) < 3) return(NULL)
-  
+
   fs <- 1000 / median(diff(df$time_ms))
   min_distance <- round((min_distance_ms / 1000) * fs)
-  
+
   peaks <- pracma::findpeaks(
     df$signal_bc,
     minpeakheight  = min_prominence * max(df$signal_bc, na.rm = TRUE),
     minpeakdistance = min_distance
   )
-  
+
   if (is.null(peaks)) return(NULL)
-  
+
   peaks_df <- data.frame(
     peak_amp  = peaks[, 1],
     peak_idx  = peaks[, 2],
     peak_time = df$time_ms[peaks[, 2]]
   )
-  
+
   # CRUCIAL: sort by time (or index) so diff(peak_time) is always positive
   peaks_df <- peaks_df[order(peaks_df$peak_idx), ]
-  
+
   # Optional: drop duplicate indices (rare, but safe)
   peaks_df <- peaks_df[!duplicated(peaks_df$peak_idx), ]
-  
+
   peaks_df
 }
 
 # ---- 4. Extract contraction parameters ----
 extract_paced_contraction_parameters <- function(df, peaks) {
   if (is.null(peaks) || nrow(peaks) < 2) return(NULL)
-  
+
   ibi_ms <- diff(peaks$peak_time)
-  
+
   # Robust noise estimate from the baseline-corrected signal
   noise_mad <- stats::mad(df$signal_bc, constant = 1, na.rm = TRUE)
   mean_amp  <- mean(peaks$peak_amp, na.rm = TRUE)
-  
+
   # SNR-like metric
   snr_amp <- mean_amp / (noise_mad + 1e-12)
-  
+
   # Beat kinetics (rise/decay): take robust summary across detected beats
   kin <- extract_beat_kinetics(df, peaks, rise_frac = 0.2, decay_frac = 0.2)
-  
+
   rise_time_ms  <- if (!is.null(kin)) stats::median(kin$rise_time_ms, na.rm = TRUE) else NA_real_
   decay_time_ms <- if (!is.null(kin)) stats::median(kin$decay_time_ms, na.rm = TRUE) else NA_real_
-  
+
   data.frame(
     mean_ibi_ms    = mean(ibi_ms),
     median_ibi_ms  = stats::median(ibi_ms),
     sd_ibi_ms      = stats::sd(ibi_ms),
     ibi_cv         = stats::sd(ibi_ms) / mean(ibi_ms),
-    
+
     mean_amp       = mean_amp,
     sd_amp         = stats::sd(peaks$peak_amp, na.rm = TRUE),
     n_beats        = nrow(peaks),
-    
+
     noise_mad      = noise_mad,
     snr_amp        = snr_amp,
-    
+
     rise_time_ms   = rise_time_ms,
     decay_time_ms  = decay_time_ms
   )
@@ -131,16 +131,16 @@ extract_paced_contraction_parameters <- function(df, peaks) {
 analyze_well_trace <- function(x, normalized = FALSE) {
   df <- parse_trace_string(x)
   if (is.null(df)) return(NULL)
-  
+
   if (!normalized) {
     df <- preprocess_trace(df)
   } else {
     df$signal_bc <- df$signal
   }
-  
+
   peaks <- detect_beats(df)
   params <- extract_paced_contraction_parameters(df, peaks)
-  
+
   list(
     trace  = df,
     peaks  = peaks,
@@ -157,7 +157,7 @@ plot_well_trace <- function(res) {
     xlab = "Time (ms)",
     ylab = "Contraction"
   )
-  
+
   if (!is.null(res$peaks)) {
     points(
       res$peaks$peak_time,
@@ -252,7 +252,7 @@ extract_calcium_parameters <- function(df, peaks) {
 
 # ---- 9. Single-cell calcium wrapper ----
 # Expects the CyteSeer "Trimmed.Ci.on.Cm.API.F.t." trace, which is already a
-# normalised ΔF/F-style signal. We do NO preprocessing here — no smoothing,
+# normalised dF/F-style signal. We do NO preprocessing here — no smoothing,
 # no detrending, no baseline subtraction.
 analyze_cell_calcium <- function(x) {
   df <- parse_trace_string(x)
@@ -280,40 +280,40 @@ extract_beat_kinetics <- function(df, peaks,
                                   rise_frac = 0.2,
                                   decay_frac = 0.2) {
   if (is.null(peaks) || nrow(peaks) == 0) return(NULL)
-  
+
   # Ensure no NAs
   df <- df[!is.na(df$signal_bc) & !is.na(df$time_ms), ]
-  
+
   kinetics <- lapply(seq_len(nrow(peaks)), function(i) {
     peak_idx <- peaks$peak_idx[i]
     peak_amp <- peaks$peak_amp[i]
-    
+
     # Guard against weird indices
     if (is.na(peak_idx) || peak_idx < 2 || peak_idx > nrow(df)) return(NULL)
     if (is.na(peak_amp) || peak_amp <= 0) return(NULL)
-    
+
     rise_thr  <- rise_frac  * peak_amp
     decay_thr <- decay_frac * peak_amp
-    
+
     # Search backward for last point below threshold
     pre <- df$signal_bc[1:peak_idx]
     rise_candidates <- which(pre <= rise_thr)
     if (length(rise_candidates) == 0) return(NULL)
     rise_idx <- tail(rise_candidates, 1)
-    
+
     # Search forward for first point below threshold
     post <- df$signal_bc[peak_idx:length(df$signal_bc)]
     decay_candidates <- which(post <= decay_thr)
     if (length(decay_candidates) == 0) return(NULL)
     decay_offset <- decay_candidates[1]
     decay_idx <- peak_idx + decay_offset - 1
-    
+
     data.frame(
       rise_time_ms  = df$time_ms[peak_idx] - df$time_ms[rise_idx],
       decay_time_ms = df$time_ms[decay_idx] - df$time_ms[peak_idx]
     )
   })
-  
+
   out <- do.call(rbind, kinetics)
   if (is.null(out) || nrow(out) == 0) return(NULL)
   out

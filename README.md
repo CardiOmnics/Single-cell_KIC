@@ -5,7 +5,7 @@ R analysis code accompanying the manuscript
 > Spanjersberg T.C.F., van der Wilt C.N., *et al.* (2026).
 > *Single-cell functional framework for cellular state distribution profiling in hiPSC-derived cardiomyocytes.*
 
-Single-cell calcium, contraction, and lipid-accumulation (BODIPY) traces from hiPSC-derived cardiomyocytes are extracted from CyteSeer output, quality-controlled, classified as regular vs. irregular, and analysed with mixed-effects models, variance decomposition, and k-means subpopulation clustering.
+Single-cell calcium, contraction, and lipid-accumulation (BODIPY) traces from hiPSC-derived cardiomyocytes are extracted from CyteSeer output, quality-controlled, classified as electrically responsive vs. irregular, and analysed with mixed-effects models, variance decomposition, and k-means subpopulation clustering.
 
 ## Repository layout
 
@@ -14,39 +14,80 @@ Single-cell calcium, contraction, and lipid-accumulation (BODIPY) traces from hi
 ├── 0_setup/                Shared utilities (colors, theme, loader and trace helpers, clustering functions)
 ├── 1_data/                 Plate maps and troponin measurements (raw CyteSeer traces are archived on Zenodo — see 1_data/README.md)
 ├── 2_analysis/             Pipeline scripts
-├── 3_output/               Written by the pipeline (processed RDS files are included; figures/tables are regenerated on run)
+├── 3_output/               Written by the pipeline (put the processed RDS files from Zenodo in 3_output/processed/)
 └── README.md               This file
 ```
 
 ## How to run
 
-1. **R requirements** — R ≥ 4.4.2. The pipeline uses `tidyverse`, `ggpubr`, `broom`, `lme4`, `lmerTest`, `broom.mixed`, `emmeans`, `openxlsx`, `pracma`, `ggcorrplot`, `ggrain`, `scales`, `cluster`, `car`, `patchwork`, `cowplot`, `colorspace`. Missing packages are installed on first run.
-2. **Open** `2_analysis/run_pipeline.R` with `2_analysis/` as the working directory.
-3. **Configure** the four `run_*` flags near the top of `run_pipeline.R`:
-   - `run_contraction` / `run_calcium` — re-process raw CyteSeer data (requires the archived raw dataset, see `1_data/README.md`). Leave `FALSE` to skip and re-use `3_output/processed/*.rds`.
-   - `run_qc_plots` — regenerate QC diagnostic plots.
-   - `run_figures` — regenerate all publication figures, tables, and statistical results.
-4. **Source** the whole file. Outputs land under `3_output/Figures/`, `3_output/Tables/`, and `3_output/QC/`.
+1. **R requirements**: R ≥ 4.4.2. Missing packages are installed on first run (`tidyverse`, `ggpubr`, `broom`, `lme4`, `lmerTest`, `broom.mixed`, `emmeans`, `openxlsx`, `pracma`, `ggcorrplot`, `ggrain`, `scales`, `cluster`, `car`, `moments`, `patchwork`, `cowplot`). Each run writes `3_output/Tables/sessionInfo_<date>.txt` with the exact versions used.
+2. **Set the working directory** to `2_analysis/` and source the pipeline:
+   ```r
+   setwd("<path to repository>/2_analysis")
+   source("run_pipeline.R")
+   ```
+3. **Get the data** from Zenodo (DOI in `1_data/README.md`). There are two options:
+   - *Processed data (about 180 MB)*: put the four `.rds` files in `3_output/processed/`. With the default flags (`run_contraction = FALSE`, `run_calcium = FALSE`, `run_qc_plots = FALSE`, `run_figures = TRUE`) the pipeline starts from these files and reproduces every figure, table and statistic in the paper.
+   - *Raw CyteSeer exports (about 4 GB)*: unpack them into `1_data/Calcium/` and `1_data/Contraction/` and set `run_contraction` and `run_calcium` to `TRUE`. Steps 1–2 then rebuild the four `.rds` files (identical to the archived ones) before the analysis runs.
+4. Optionally, set `run_qc_plots = TRUE` to add QC diagnostics and trace galleries that are not part of the paper.
 
-Re-running `run_figures = TRUE` (with the other three flags `FALSE`) only requires the six `3_output/processed/*.rds` files that ship with this repository — no raw data download needed.
+Outputs are written under `3_output/Figures/`, `3_output/Tables/` and `3_output/QC/`.
 
 ## Pipeline summary
 
 | Step | Script | Purpose |
 |------|--------|---------|
-| 1 | `1_process_contraction.R` | Parse contraction traces, extract per-cell parameters + BODIPY intensity + nucleus area. |
-| 2 | `2_process_calcium.R` | Parse calcium traces, extract per-cell parameters + cell/nucleus area. |
-| 3 | `3_qc_plots_contraction.R` | QC diagnostic plots for the contraction session. |
-| 4 | `4_qc_plots_calcium.R` | QC diagnostic plots for the calcium session. |
-| 5 | `5_plot_and_stats.R` | Merge, mixed-effects models, variance decomposition (Figure 2), rainclouds, correlations, PCA, subpopulation clustering, all publication figures and tables. |
+| 1 | `1_process_contraction.R` | Parse contraction traces, extract per-cell parameters, BODIPY intensity and nucleus area, classify cells (AC1 + beat-count cap). |
+| 2 | `2_process_calcium.R` | Parse calcium traces, extract per-cell parameters, cell and nucleus area, classify cells. |
+| — | `run_pipeline.R` | Well-level QC gates (≥ 10 responsive cells; CyteSeer responder rate above an Otsu threshold for calcium) and Supplementary Table 1. |
+| 3 | `3_qc_plots_contraction.R` | Optional QC diagnostics for the contraction session. |
+| 4 | `4_qc_plots_calcium.R` | Optional QC diagnostics for the calcium session. |
+| 5 | `5_plot_and_stats.R` | Mixed-effects models, normality checks, correlations, irregular-cell GLMMs, well-average comparison, clustering, within-cluster tests, lipid-loaded vs neighbour comparison, Figures 2, 4, 5, 6, Supplementary Figures 1, 3, 4, statistical results workbook. |
+| 6 | `6_figure3_variance_decomposition.R` | Variance decomposition and well-average vs single-cell panels (Figure 3). |
+| 7 | `7_figure1_trace_illustration.R` | Single-cell trace panels of Figure 1. |
 
 All scripts are orchestrated by `run_pipeline.R`.
 
+## Where each result ends up
+
+| Manuscript item | Output file |
+|---|---|
+| Fig. 1 (trace panels) | `Figures/Publication/figure1_trace_illustration/figure_trace_{calcium,contraction}_<date>.pdf` (rest of the figure is a schematic) |
+| Fig. 2A–B | `Figures/Publication/figure_troponin_bodipy/figure_troponin_bodipy_<date>.pdf` (panel C images added by hand) |
+| Fig. 3 | `Figures/Publication/figure3_variance_decomposition/figure3.pdf` |
+| Fig. 4 | `Figures/Publication/figure_calcium_clusters/figure_calcium_clusters.pdf` |
+| Fig. 5 | `Figures/Publication/figure_contraction_clusters/figure_contraction_clusters.pdf` |
+| Fig. 6 | `Figures/Publication/figure_power_comparison/figure_power_comparison.pdf` |
+| Supplementary Fig. 1 | `Figures/Exploratory/dotplot_irregular_per_well_<date>.pdf` |
+| Supplementary Fig. 2 | Microscopy images (not generated by code) |
+| Supplementary Fig. 3A / 3B | `Figures/Exploratory/cor_session1_all_<date>.pdf` / `cor_session2_all_<date>.pdf` |
+| Supplementary Fig. 4 | `Figures/Exploratory/fig_well_cross_correlations_<date>.pdf` |
+| Supplementary Table 1 | `Tables/supplementary_table_1_<date>.xlsx` |
+| Supplementary Table 2 | `Tables/statistical_results_<date>.xlsx`, sheet `ANOVA` |
+| Supplementary Table 3 | `Tables/statistical_results_<date>.xlsx`, sheet `Posthoc` |
+| Supplementary Table 4 | `Tables/statistical_results_<date>.xlsx`, sheet `K_Diagnostics` |
+
+Other numbers in the text come from these sheets of `statistical_results_<date>.xlsx`:
+
+| Sheet | Contents |
+|---|---|
+| `Results_Summary`, `Fixed_Effects` | Mixed-model F tests per parameter in one row; fixed-effect estimates |
+| `Summary_Calcium`, `Summary_Contraction` | Mean / SD / median per condition and cell line |
+| `Irregular_Summary`, `Irregular_Tests`, `Irregular_GLMM_FE` | Irregular-cell proportions and GLMM likelihood-ratio tests |
+| `Well_Cross_Cor` | Well-level Spearman correlations between calcium and contraction |
+| `Power_Comparison` | Well-average two-way ANOVA vs single-cell mixed model (Fig. 6A) |
+| `WithinCluster_Direction` | Within-cluster condition effects with direction vs MM (Fig. 6B) |
+| `Clust_*` | Cluster profiles, composition and Kruskal–Wallis tests (Figs. 4–5) |
+| `LipidLoaded_Test`, `LipidLoaded_PerWell` | Lipid-loaded vs neighbour cells in oleate wells |
+| `Variance_Decomp` | Variance components (Fig. 3A) |
+
+Overall cell counts and responsive-cell percentages are in `Tables/paper_stats_overall_<date>.csv` and `paper_stats_by_group_<date>.csv`.
+
 ## Data availability
 
-- Plate maps and troponin-I measurements are shipped in `1_data/`.
-- Processed per-cell data (six `.rds` files) ships in `3_output/processed/` so step 5 can run without the raw data.
-- Raw CyteSeer single-cell trace exports are archived on Zenodo — see `1_data/README.md` for the DOI.
+- Plate maps and troponin-I measurements are included in `1_data/`.
+- Processed per-cell data (four `.rds` files, about 180 MB) are archived on Zenodo; placed in `3_output/processed/`, they let steps 5–7 run without the raw data.
+- Raw CyteSeer single-cell trace exports (about 4 GB) are archived on Zenodo — see `1_data/README.md` for the DOI.
 
 ## Citation
 

@@ -41,9 +41,9 @@ ca_well_qc_gate <- ca_cell_params_qc %>%
   mutate(
     well_qc_pass   = n_good_paced >= min_good_paced,
     qc_fail_reason = case_when(
-      n_manually_excluded == n_total ~ "manually excluded",
       !well_qc_pass ~ sprintf("n_good_paced = %d (< %d)",
                                n_good_paced, min_good_paced),
+      n_manually_excluded == n_total ~ "manually excluded",
       TRUE ~ NA_character_
     ),
     modality       = "Calcium"
@@ -90,7 +90,7 @@ if (nrow(trace_df) > 0) {
 
 # AC1 distribution
 cat("    Plotting AC1 distribution...\n")
-class_colors <- c(good_paced = "#2166AC", irregular = "#D95F02")
+class_colors <- c(good_paced = "#0072B2", irregular = "#D55E00")
 
 p_ac1 <- ca_cell_params_qc %>%
   filter(is.finite(ac1)) %>%
@@ -131,6 +131,72 @@ p_scatter <- ca_cell_params_qc %>%
        x = "AC1", y = "n_beats", colour = NULL) +
   theme_project() + theme(legend.position = "bottom")
 print(p_scatter)
+
+# Morphology diagnostic -------------------------------------------------------
+# Independent of the Ca signal: is the segmented-cell morphology unimodal
+# (consistent with a homogeneous CM-dominated population) or bimodal
+# (suggesting a second cell type)? Also: does low-AC1 cluster at a distinct
+# morphology, or span the same range as high-AC1? If it spans, low AC1 is
+# mostly CMs with imaging issues, not non-CMs.
+cat("    Plotting morphology diagnostic...\n")
+
+morph_df <- ca_cell_params_qc %>%
+  filter(is.finite(Cell.Area), is.finite(Nucleus.Area),
+         Cell.Area > 0, Nucleus.Area > 0) %>%
+  mutate(ac1_bin = case_when(
+    !is.finite(ac1)            ~ "NA",
+    ac1 >= ac1_otsu_ca         ~ "AC1 >= Otsu",
+    TRUE                       ~ "AC1 <  Otsu"
+  ))
+
+if (nrow(morph_df) > 0) {
+  # Cell area distribution per cell line — check for bimodality
+  p_area <- morph_df %>%
+    ggplot(aes(x = Cell.Area)) +
+    geom_density(fill = "grey60", colour = NA, alpha = 0.7) +
+    facet_wrap(~ Cell_Line, scales = "free_y",
+               labeller = cell_line_fig_labeller) +
+    scale_x_log10() +
+    labs(title = "Cell area distribution (independent of Ca signal)",
+         subtitle = "Unimodal = consistent with homogeneous CM population",
+         x = expression("Cell area ("*mu*m^2*", log scale)"),
+         y = "Density") +
+    theme_project()
+  print(p_area)
+
+  # NC ratio distribution per cell line
+  p_nc <- morph_df %>%
+    ggplot(aes(x = NC_ratio)) +
+    geom_density(fill = "grey60", colour = NA, alpha = 0.7) +
+    facet_wrap(~ Cell_Line, scales = "free_y",
+               labeller = cell_line_fig_labeller) +
+    labs(title = "Nucleus-to-cell area ratio",
+         subtitle = "Non-CMs (e.g. fibroblasts) tend to have higher NC ratio",
+         x = "Nucleus area / Cell area",
+         y = "Density") +
+    theme_project()
+  print(p_nc)
+
+  # AC1-bin vs morphology — does low AC1 cluster at distinct morphology?
+  ac1_morph_colors <- c("AC1 >= Otsu" = "#0072B2",
+                        "AC1 <  Otsu" = "#D55E00",
+                        "NA"          = "grey70")
+  p_morph_ac1 <- morph_df %>%
+    ggplot(aes(x = Cell.Area, y = NC_ratio, colour = ac1_bin)) +
+    geom_point(alpha = 0.4, size = 0.6) +
+    facet_wrap(~ Cell_Line, labeller = cell_line_fig_labeller) +
+    scale_x_log10() +
+    scale_colour_manual(values = ac1_morph_colors) +
+    labs(title = "Morphology vs AC1 status",
+         subtitle = paste(
+           "If low-AC1 cells span the high-AC1 morphology range,",
+           "low AC1 is mostly CMs with imaging issues, not non-CMs"),
+         x = expression("Cell area ("*mu*m^2*", log scale)"),
+         y = "NC ratio", colour = NULL) +
+    theme_project() +
+    theme(legend.position = "bottom")
+  print(p_morph_ac1)
+}
 
 # Example traces
 cat("    Example traces...\n")
@@ -257,7 +323,10 @@ if (nrow(calib_trace_df) > 0) {
 
 # ---- Publication trace gallery ----------------------------------------------
 cat("  Generating trace gallery...\n")
-dir.create(file.path(main_dir, "Figures"), showWarnings = FALSE, recursive = TRUE)
+if (!exists("expl_dir"))
+  expl_dir <- file.path(main_dir, "Figures", "Exploratory")
+gallery_dir <- file.path(expl_dir, "trace_galleries")
+dir.create(gallery_dir, showWarnings = FALSE, recursive = TRUE)
 gallery_colors <- c("good_paced" = "#2166AC", "irregular" = "#D95F02")
 gallery_well_pick <- ca_cell_params_qc %>%
   filter(signal_class == "good_paced") %>%
@@ -302,7 +371,7 @@ for (w in seq_len(nrow(gallery_well_pick))) {
     theme_project() +
     theme(strip.text = element_text(size = 6), legend.position = "bottom")
   safe_wuid <- gsub("[^A-Za-z0-9_.]", "_", wuid)
-  pdf_path  <- file.path(main_dir, "Figures",
+  pdf_path  <- file.path(gallery_dir,
     paste0("trace_gallery_calcium_", safe_wuid, "_", analysis_date, ".pdf"))
   cairo_pdf(pdf_path, width = 14, height = 12)
   print(p)
