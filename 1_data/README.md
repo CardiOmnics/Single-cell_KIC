@@ -10,9 +10,7 @@ Small input files required by the pipeline:
 
 ## Raw and processed data (NOT in this repository)
 
-The raw single-cell trace exports from CyteSeer (Vala Sciences) and the four processed `.rds` files are archived on Zenodo:
-
-> **DOI: 10.5281/zenodo.XXXXXXX** *(placeholder — update once deposited)*
+The raw single-cell trace exports from CyteSeer (Vala Sciences) and the four processed `.rds` files will be deposited on Zenodo upon publication of the paper. The DOI will be added here.
 
 After downloading, unpack the archives into `1_data/` so that the paths referenced at the top of `1_process_contraction.R` and `2_process_calcium.R` resolve:
 

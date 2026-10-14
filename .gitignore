@@ -21,6 +21,6 @@
 3_output/Boxplots/
 3_output/SingleCell/
 
-# Raw CyteSeer exports and processed RDS files (archived on Zenodo — see 1_data/README.md)
+# Raw CyteSeer exports and processed RDS files (deposited on Zenodo — see 1_data/README.md)
 1_data/Calcium/
 1_data/Contraction/

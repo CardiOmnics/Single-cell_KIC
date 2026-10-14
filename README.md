@@ -12,7 +12,7 @@ Single-cell calcium, contraction, and lipid-accumulation (BODIPY) traces from hi
 ```
 .
 ├── 0_setup/                Shared utilities (colors, theme, loader and trace helpers, clustering functions)
-├── 1_data/                 Plate maps and troponin measurements (raw CyteSeer traces are archived on Zenodo — see 1_data/README.md)
+├── 1_data/                 Plate maps and troponin measurements (raw CyteSeer traces will be deposited on Zenodo — see 1_data/README.md)
 ├── 2_analysis/             Pipeline scripts
 ├── 3_output/               Written by the pipeline (put the processed RDS files from Zenodo in 3_output/processed/)
 └── README.md               This file
@@ -26,7 +26,7 @@ Single-cell calcium, contraction, and lipid-accumulation (BODIPY) traces from hi
    setwd("<path to repository>/2_analysis")
    source("run_pipeline.R")
    ```
-3. **Get the data** from Zenodo (DOI in `1_data/README.md`). There are two options:
+3. **Get the data** from Zenodo. The data will be deposited upon publication of the paper; the DOI will then be added to `1_data/README.md`. There are two options:
    - *Processed data (about 180 MB)*: put the four `.rds` files in `3_output/processed/`. With the default flags (`run_contraction = FALSE`, `run_calcium = FALSE`, `run_qc_plots = FALSE`, `run_figures = TRUE`) the pipeline starts from these files and reproduces every figure, table and statistic in the paper.
    - *Raw CyteSeer exports (about 4 GB)*: unpack them into `1_data/Calcium/` and `1_data/Contraction/` and set `run_contraction` and `run_calcium` to `TRUE`. Steps 1–2 then rebuild the four `.rds` files (identical to the archived ones) before the analysis runs.
 4. Optionally, set `run_qc_plots = TRUE` to add QC diagnostics and trace galleries that are not part of the paper.
@@ -86,8 +86,8 @@ Overall cell counts and responsive-cell percentages are in `Tables/paper_stats_o
 ## Data availability
 
 - Plate maps and troponin-I measurements are included in `1_data/`.
-- Processed per-cell data (four `.rds` files, about 180 MB) are archived on Zenodo; placed in `3_output/processed/`, they let steps 5–7 run without the raw data.
-- Raw CyteSeer single-cell trace exports (about 4 GB) are archived on Zenodo — see `1_data/README.md` for the DOI.
+- Processed per-cell data (four `.rds` files, about 180 MB) and the raw CyteSeer single-cell trace exports (about 4 GB) will be deposited on Zenodo upon publication of the paper. The DOI will be added to `1_data/README.md`.
+- Placed in `3_output/processed/`, the processed files let steps 5–7 run without the raw data.
 
 ## Citation
 
