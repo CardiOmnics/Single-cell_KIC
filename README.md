@@ -1,9 +1,9 @@
-# Single-cell functional framework for cellular state distribution profiling in hiPSC-derived cardiomyocytes
+# CardioState: Resolving cell-to-cell functional heterogeneity in hiPSC-derived cardiomyocytes from high-throughput single-cell imaging
 
 R analysis code accompanying the manuscript
 
 > Spanjersberg T.C.F., van der Wilt C.N., *et al.* (2026).
-> *Single-cell functional framework for cellular state distribution profiling in hiPSC-derived cardiomyocytes.*
+> *CardioState: Resolving cell-to-cell functional heterogeneity in hiPSC-derived cardiomyocytes from high-throughput single-cell imaging.*
 
 Single-cell calcium, contraction, and lipid-accumulation (BODIPY) traces from hiPSC-derived cardiomyocytes are extracted from CyteSeer output, quality-controlled, classified as electrically responsive vs. irregular, and analysed with mixed-effects models, variance decomposition, and k-means subpopulation clustering.
 
