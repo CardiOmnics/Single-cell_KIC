@@ -10,9 +10,9 @@ Small input files required by the pipeline:
 
 ## Raw and processed data (NOT in this repository)
 
-The raw single-cell trace exports from CyteSeer (Vala Sciences) and the four processed `.rds` files will be deposited on Zenodo upon publication of the paper. The DOI will be added here.
+The raw single-cell trace exports from CyteSeer (Vala Sciences) and the four processed `.rds` files are available from the corresponding author upon reasonable request (see the Contact section of the main README).
 
-After downloading, unpack the archives into `1_data/` so that the paths referenced at the top of `1_process_contraction.R` and `2_process_calcium.R` resolve:
+Unpack the raw data into `1_data/` so that the paths referenced at the top of `1_process_contraction.R` and `2_process_calcium.R` resolve:
 
 ```
 1_data/
@@ -41,4 +41,4 @@ wells and 48 contraction wells (112 files, about 4 GB). Images, masks and the ot
 `1_data/Calcium/` and `1_data/Contraction/` are listed in `.gitignore`, so the
 raw data never enters the git repository.
 
-If you only want to regenerate the figures, tables and statistics, you do **not** need the raw data. Download the four processed `.rds` files from the same Zenodo record into `3_output/processed/` and keep `run_contraction = FALSE` and `run_calcium = FALSE` in `run_pipeline.R`.
+If you only want to regenerate the figures, tables and statistics, you do **not** need the raw data. Put the four processed `.rds` files in `3_output/processed/` and keep `run_contraction = FALSE` and `run_calcium = FALSE` in `run_pipeline.R`.

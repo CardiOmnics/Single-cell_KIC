@@ -25,7 +25,7 @@ suppressPackageStartupMessages(
 
 # Global settings
 #   main_dir     = 3_output/                     all pipeline outputs
-#   processed    = 3_output/processed/           per-cell RDS files (Zenodo)
+#   processed    = 3_output/processed/           per-cell RDS files
 #   pub_dir      = 3_output/Figures/Publication  main-figure panels
 #   expl_dir     = 3_output/Figures/Exploratory  supplementary figures,
 #                  single panels, diagnostics, trace galleries
@@ -56,10 +56,10 @@ cat("========================================\n\n")
 # Steps to run — set to FALSE to skip
 # ============================================================
 # run_contraction / run_calcium = TRUE re-process the raw CyteSeer exports
-# (download from Zenodo first, see 1_data/README.md) and write the RDS files
-# in 3_output/processed/. FALSE uses the RDS files from Zenodo placed in
+# (place them in 1_data/ first, see 1_data/README.md) and write the RDS files
+# in 3_output/processed/. FALSE uses the processed RDS files placed in
 # 3_output/processed/, which is all that is needed to reproduce every figure,
-# table and statistic.
+# table and statistic. The data are available upon request (see README.md).
 run_contraction <- FALSE
 run_calcium     <- FALSE
 run_qc_plots    <- FALSE  # QC diagnostics + trace galleries (not in the paper)
@@ -104,8 +104,8 @@ if (run_contraction) {
 } else {
   cat("STEP 1: Skipped — loading saved data from disk\n")
   rds <- file.path(processed_dir, "contraction_all_cells.rds")
-  if (!file.exists(rds)) stop("No contraction RDS in ", processed_dir, ". Download it from Zenodo ",
-                              "(see 1_data/README.md) or set run_contraction = TRUE.")
+  if (!file.exists(rds)) stop("No contraction RDS in ", processed_dir, ". The data are available upon ",
+                              "request (see README.md), or set run_contraction = TRUE.")
   contr_cell_params_all <<- readRDS(rds)
   cat("  Loaded:", rds, "\n")
   results_rds <- file.path(processed_dir, "contraction_results_all.rds")
@@ -186,8 +186,8 @@ if (run_calcium) {
 } else {
   cat("STEP 2: Skipped — loading saved data from disk\n")
   rds <- file.path(processed_dir, "calcium_all_cells.rds")
-  if (!file.exists(rds)) stop("No calcium RDS in ", processed_dir, ". Download it from Zenodo ",
-                              "(see 1_data/README.md) or set run_calcium = TRUE.")
+  if (!file.exists(rds)) stop("No calcium RDS in ", processed_dir, ". The data are available upon ",
+                              "request (see README.md), or set run_calcium = TRUE.")
   ca_cell_params_all <<- readRDS(rds)
   cat("  Loaded:", rds, "\n")
   results_rds <- file.path(processed_dir, "calcium_results_all.rds")
