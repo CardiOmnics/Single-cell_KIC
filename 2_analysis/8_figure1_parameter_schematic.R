@@ -6,12 +6,16 @@
 #   A  Ca2+ transient: peak amplitude, rise time, decay time, CTD50, CTD90
 #   B  Contraction:    amplitude, rise time, decay time
 #
-# Each panel shows one beat of one control cell whose parameters lie closest
-# to the control median (z-scored distance), so the example is typical rather
-# than hand-picked. Within that cell, the beat shown is the one whose per-beat
-# values lie closest to the cell's own medians (the medians are what enter the
-# analysis). The marked intervals are computed with the same functions that
-# produce the analysed parameters (0_setup/contraction_trace_utils.R):
+# Both examples are control cells chosen by rule, not by hand.
+#   A  The cell whose parameters lie closest to the control median (z-scored
+#      distance); the beat shown is the one whose per-beat values lie closest
+#      to the cell's own medians (the medians are what enter the analysis).
+#   B  Single contraction beats are noisy, so among the 50 control cells
+#      closest to the median the one with the highest signal-to-noise ratio is
+#      taken, and its beats are averaged (aligned on their peaks). The
+#      intervals are measured on the averaged beat.
+# The marked intervals are computed with the same functions that produce the
+# analysed parameters (0_setup/contraction_trace_utils.R):
 #   Ca rise time     last sample <= 10% of peak before the peak -> peak
 #   Ca decay time    peak -> first sample <= 20% of peak (80% recovery)
 #   CTD50 / CTD90    upstroke -> downstroke crossing at 50% / 10% of peak
@@ -57,8 +61,10 @@ if (!exists("ca_results_all") || is.null(ca_results_all) ||
   contr_cell_params_all$qc_pass <- contr_cell_params_all$cell_uid %in% keep_co
 }
 
-# Control cell closest to the control median on the given parameters
-pick_typical_cell <- function(params, cols, min_beats) {
+# Control cell closest to the control median on the given parameters. With
+# n_candidates > 1, the cell with the highest `prefer` value (e.g. signal-to-
+# noise) among the n closest cells is taken instead.
+pick_typical_cell <- function(params, cols, min_beats, n_candidates = 1, prefer = NULL) {
   ctrl <- params %>%
     mutate(row_idx = row_number()) %>%
     filter(qc_pass, signal_class == "good_paced", Condition == "Control",
@@ -67,7 +73,33 @@ pick_typical_cell <- function(params, cols, min_beats) {
   z <- scale(as.matrix(ctrl[, cols]))
   med <- apply(z, 2, median)
   d <- sqrt(rowSums(sweep(z, 2, med)^2))
-  ctrl[which.min(d), ]
+  cand <- ctrl[order(d)[seq_len(min(n_candidates, nrow(ctrl)))], ]
+  if (is.null(prefer)) cand[1, ] else cand[which.max(cand[[prefer]]), ]
+}
+
+# Beat-averaged trace of one cell: all beats aligned on their detected peak and
+# averaged; the intervals are then measured on the averaged beat with the same
+# function and thresholds as in the analysis. Used for contraction, whose
+# single beats are noisy (the trace is detrended and baseline-corrected, so
+# beats can be averaged without offset).
+average_beat <- function(res, rise_frac, decay_frac, pre_ms, post_ms) {
+  tr <- as.data.frame(res$trace); pk <- res$peaks
+  tr <- tr[!is.na(tr$signal_bc) & !is.na(tr$time_ms), ]
+  dt <- median(diff(tr$time_ms))
+  n_pre <- round(pre_ms / dt); n_post <- round(post_ms / dt)
+  ok <- pk$peak_idx > n_pre & pk$peak_idx + n_post <= nrow(tr)
+  segs <- sapply(pk$peak_idx[ok], function(i) tr$signal_bc[(i - n_pre):(i + n_post)])
+  avg <- data.frame(time_ms = (seq_len(nrow(segs)) - n_pre - 1) * dt,
+                    signal_bc = rowMeans(segs))
+  p_i <- which.max(avg$signal_bc)
+  peak <- data.frame(peak_amp = avg$signal_bc[p_i], peak_idx = p_i,
+                     peak_time = avg$time_ms[p_i])
+  kin <- extract_beat_kinetics(avg, peak, rise_frac = rise_frac, decay_frac = decay_frac)
+  avg$time_ms <- avg$time_ms - peak$peak_time
+  lm <- list(amp = peak$peak_amp, t_peak = 0,
+             t_rise0 = -kin$rise_time_ms, t_decay1 = kin$decay_time_ms,
+             rise_ms = kin$rise_time_ms, decay_ms = kin$decay_time_ms)
+  list(trace = avg, lm = lm, beat = paste("mean of", sum(ok)), n_beats = nrow(pk))
 }
 
 # One beat of the trace with its landmarks, measured as in the pipeline
@@ -111,12 +143,13 @@ ca_cell <- pick_typical_cell(ca_cell_params_all,
                              min_beats = 8)
 co_cell <- pick_typical_cell(contr_cell_params_all,
                              c("mean_amp", "rise_time_ms", "decay_time_ms"),
-                             min_beats = 4)
+                             min_beats = 5, n_candidates = 50, prefer = "snr_amp")
 cat(sprintf("  Ca example:          %s (%s)\n", ca_cell$cell_uid, ca_cell$Cell_Line))
 cat(sprintf("  Contraction example: %s (%s)\n", co_cell$cell_uid, co_cell$Cell_Line))
 
 ca_pick <- pick_beat(ca_results_all[[ca_cell$row_idx]], rise_frac = 0.1, decay_frac = 0.2, ctd = TRUE)
-co_pick <- pick_beat(contr_results_all[[co_cell$row_idx]], rise_frac = 0.2, decay_frac = 0.2)
+co_pick <- average_beat(contr_results_all[[co_cell$row_idx]], rise_frac = 0.2, decay_frac = 0.2,
+                        pre_ms = 300, post_ms = 400)
 ca_beat <- ca_pick$trace; ca_lm <- ca_pick$lm
 co_beat <- co_pick$trace; co_lm <- co_pick$lm
 
@@ -158,22 +191,23 @@ p_ca <- base_plot(ca_beat, "#1B6CA8", expression(Ca^{2*"+"}~signal~"(a.u.)")) +
   # amplitude
   annotate("segment", x = x_lo + 45, xend = x_lo + 45, y = 0, yend = a,
            colour = ink, linewidth = 0.35, arrow = arr) +
-  annotate("text", x = x_lo + 22, y = a / 2, label = "Peak amplitude", angle = 90,
+  annotate("text", x = x_lo + 22, y = a * 0.6, label = "Amplitude", angle = 90,
            vjust = 0, size = txt, colour = ink) +
   level_line(x_lo + 20, 0, a) +
   # CTD50 and CTD90 (width at 50% and 10% of peak)
-  level_line(x_lo, x_hi, 0.5 * a) + level_line(x_lo, x_hi, 0.1 * a) +
+  # (level lines start right of the amplitude arrow so they miss its label)
+  level_line(x_lo + 60, x_hi, 0.5 * a) + level_line(x_lo + 60, x_hi, 0.1 * a) +
   h_interval(ca_lm$ctd50[1], ca_lm$ctd50[2], 0.5 * a, "CTD50") +
   h_interval(ca_lm$ctd90[1], ca_lm$ctd90[2], 0.1 * a, "CTD90") +
   annotate("text", x = x_hi, y = c(0.5, 0.1) * a, label = c("50%", "10%"),
            hjust = 1, vjust = -0.4, size = 2, colour = guide) +
   # rise (10% -> peak) and decay (peak -> 20%) drawn above the trace
-  v_tick(ca_lm$t_rise0, 0.1 * a, 1.16 * a) + v_tick(0, a, 1.40 * a) +
-  v_tick(ca_lm$t_decay1, 0.2 * a, 1.40 * a) +
+  v_tick(ca_lm$t_rise0, 0.1 * a, 1.16 * a) + v_tick(0, a, 1.55 * a) +
+  v_tick(ca_lm$t_decay1, 0.2 * a, 1.55 * a) +
   h_interval(ca_lm$t_rise0, 0, 1.16 * a, "Rise time\n(10% to peak)") +
-  h_interval(0, ca_lm$t_decay1, 1.40 * a, "Decay time\n(peak to 80% recovery)") +
+  h_interval(0, ca_lm$t_decay1, 1.55 * a, "Decay time\n(peak to 80% recovery)") +
   scale_y_continuous(expand = expansion(mult = c(0.04, 0.02))) +
-  coord_cartesian(ylim = c(0, 1.65 * a), clip = "off") +
+  coord_cartesian(ylim = c(0, 1.82 * a), clip = "off") +
   labs(title = expression(bold(Ca^{2*"+"}~transient)))
 
 # ---- Panel B: contraction ----------------------------------------------------
@@ -182,18 +216,18 @@ xb_lo <- min(co_beat$time_ms); xb_hi <- max(co_beat$time_ms)
 p_co <- base_plot(co_beat, "#C94040", "Contraction signal (a.u.)") +
   annotate("segment", x = xb_lo + 35, xend = xb_lo + 35, y = 0, yend = b,
            colour = ink, linewidth = 0.35, arrow = arr) +
-  annotate("text", x = xb_lo + 15, y = b / 2, label = "Amplitude", angle = 90,
+  annotate("text", x = xb_lo + 15, y = b * 0.6, label = "Amplitude", angle = 90,
            vjust = 0, size = txt, colour = ink) +
   level_line(xb_lo + 15, 0, b) +
-  level_line(xb_lo, xb_hi, 0.2 * b) +
+  level_line(xb_lo + 50, xb_hi, 0.2 * b) +
   annotate("text", x = xb_hi, y = 0.2 * b, label = "20%", hjust = 1, vjust = -0.4,
            size = 2, colour = guide) +
-  v_tick(co_lm$t_rise0, 0.2 * b, 1.16 * b) + v_tick(0, b, 1.40 * b) +
-  v_tick(co_lm$t_decay1, 0.2 * b, 1.40 * b) +
+  v_tick(co_lm$t_rise0, 0.2 * b, 1.16 * b) + v_tick(0, b, 1.55 * b) +
+  v_tick(co_lm$t_decay1, 0.2 * b, 1.55 * b) +
   h_interval(co_lm$t_rise0, 0, 1.16 * b, "Rise time\n(20% to peak)") +
-  h_interval(0, co_lm$t_decay1, 1.40 * b, "Decay time\n(peak to 80% relaxation)") +
+  h_interval(0, co_lm$t_decay1, 1.55 * b, "Decay time\n(peak to 80% relaxation)") +
   scale_y_continuous(expand = expansion(mult = c(0.04, 0.02))) +
-  coord_cartesian(ylim = c(0, 1.65 * b), clip = "off") +
+  coord_cartesian(ylim = c(0, 1.82 * b), clip = "off") +
   labs(title = "Contraction")
 
 if (!requireNamespace("cowplot", quietly = TRUE)) install.packages("cowplot")

@@ -165,7 +165,7 @@ model_params <- list(
   # Morphology (Session 1 -> calcium_gp; Cell.Area + Nucleus.Area valid here)
   list(col = "Cell.Area",    label = "Cell area",               data = "calcium",      log = TRUE),
   list(col = "Nucleus.Area", label = "Nucleus area (S1)",       data = "calcium",      log = TRUE),
-  list(col = "NC_ratio",     label = "N/C ratio",               data = "calcium",      log = FALSE),
+  list(col = "NC_ratio",     label = "N/C ratio",               data = "calcium",      log = TRUE),
   # Contraction (Session 2 -> contraction_gp)
   list(col = "contr_amp",      label = "Contraction amplitude", data = "contraction",  log = TRUE),
   list(col = "contr_rise_ms",  label = "Contraction rise time", data = "contraction",  log = TRUE),
@@ -253,7 +253,7 @@ cat("  Models complete. Parameters fitted:", length(all_anova), "\n")
 # Section 2b: Normality diagnostics — validate primary models
 # =============================================================================
 # Extracts residuals from the already-fitted primary models (Section 2) and
-# checks whether the log10 transformation (applied to 10 of 13 parameters) has
+# checks whether the log10 transformation (applied to all 13 parameters; N/C ratio since 2026-10-22) has
 # sufficiently normalised the residuals.
 #
 # Criterion: residual skewness.
@@ -1484,10 +1484,11 @@ if (nrow(wellavg_vs_mixed) > 0) {
   session_short  <- c(calcium = "Calcium", contraction = "Contraction")
 
   # Legend order: well-average model first, then the single-cell mixed model.
-  # The mixed model is drawn in purple, as stated in the figure legend.
+  # Mixed model in black, well-average model in grey (Fig. 6B already uses
+  # the cluster colours, so panel A stays neutral).
   method_levels <- c("Well-average LM", "Single-cell mixed model")
   method_colors <- c("Well-average LM"         = "#999999",
-                     "Single-cell mixed model" = "#7B3294")
+                     "Single-cell mixed model" = "#000000")
   method_shapes <- c("Well-average LM"         = 17,
                      "Single-cell mixed model" = 16)
 
@@ -1634,7 +1635,7 @@ size_specs <- list(
        label = "Cell area (\u00B5m\u00B2)",          title = "Cell area"),
   list(col = "Nucleus.Area", data = "calcium",     log = TRUE,
        label = "Nucleus area (\u00B5m\u00B2)",       title = "Nucleus area, calcium session (S1)"),
-  list(col = "NC_ratio",     data = "calcium",     log = FALSE,
+  list(col = "NC_ratio",     data = "calcium",     log = TRUE, 
        label = "N/C area ratio",                       title = "Nucleus-to-cytoplasm ratio"),
   list(col = "Nucleus.Area", data = "contraction", log = TRUE,
        label = "Nucleus area (\u00B5m\u00B2)",       title = "Nucleus area, contraction session (S2)")
