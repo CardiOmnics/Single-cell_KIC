@@ -1,13 +1,25 @@
 # Unified Okabe-Ito palette (Okabe & Ito 2008; colorblind-safe gold standard).
 # Used by the entire manuscript so every figure speaks the same color language.
 group_colors <- c(
-  "MM"          = "#0072B2",
+  "Control"     = "#0072B2",
   "Palmitate"   = "#009E73",
   "Oleate"      = "#D55E00",
   "Combination" = "#CC79A7"
 )
 
-group_levels <- c("MM", "Palmitate", "Oleate", "Combination")
+group_levels <- c("Control", "Palmitate", "Oleate", "Combination")
+
+# The plate maps and cached RDS files code the control condition as "MM"
+# (maturation medium). Figures, tables and text all call it "Control", so the
+# label is swapped once, right after the cell tables are loaded.
+relabel_condition <- function(df, col = "Condition") {
+  if (col %in% names(df)) {
+    vals <- as.character(df[[col]])
+    vals[vals == "MM"] <- "Control"
+    df[[col]] <- vals
+  }
+  df
+}
 
 # -----------------------------------------------------------------------------
 # Subpopulation (k-means cluster) palettes — one family per imaging session
@@ -35,7 +47,7 @@ group_levels <- c("MM", "Palmitate", "Oleate", "Combination")
 # chroma floor, CVD separation and the normal-vision floor, worst pair ΔE 18.0
 # (calcium) and 17.3 (contraction) against a floor of 15.
 #
-# Known, accepted overlap: the deep indigo sits near the MM condition blue and
+# Known, accepted overlap: the deep indigo sits near the Control condition blue and
 # the burnt orange near the Oleate vermillion. Conditions are never colour-coded
 # in the same panel as clusters (the composition bars put Condition on the x
 # axis), so the two encodings never meet.
@@ -52,7 +64,7 @@ cluster_colors_contraction_k4 <- c("#D7AB5C", "#CE8340", "#C65D26", "#8B2B2F")
 # Diverging scale for the cluster-profile heatmap (mean z-score per parameter).
 # Deliberately low-chroma: it encodes magnitude, not identity, so it should
 # recede behind the cluster colours rather than compete with them. The previous
-# saturated blue↔orange also reused the MM and Oleate condition hues.
+# saturated blue↔orange also reused the Control and Oleate condition hues.
 zscore_diverging <- c(low = "#6E90AD", mid = "#F7F7F5", high = "#C0885A")
 
 # Pick the label ink (near-black or white) that contrasts better with a given

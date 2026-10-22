@@ -12,6 +12,7 @@ All pipeline scripts. Run them through `run_pipeline.R`.
 | 5 | `5_plot_and_stats.R` | Mixed-effects models (`lme4` + `lmerTest`) with Tukey post-hoc tests (`emmeans`) and residual-skewness checks; Figure 2A–B; single-cell Spearman correlations (Supp. Fig. 3) and well-level calcium × contraction correlations (Supp. Fig. 4); irregular-cell GLMMs (Supp. Fig. 1); well-average two-way ANOVA vs mixed model; k-means clustering (Figs. 4–5, Supp. Table 4); within-cluster condition tests (Fig. 6); lipid-loaded vs neighbour comparison in oleate wells; `statistical_results_<date>.xlsx`. |
 | 6 | `6_figure3_variance_decomposition.R` | Variance decomposition (cell line, condition, well, cell) and well-average vs single-cell panels (Figure 3). Appends the `Variance_Decomp` sheet. |
 | 7 | `7_figure1_trace_illustration.R` | Eight single-cell traces per modality from one well (Figure 1 trace panels). |
+| 8 | `8_figure1_parameter_schematic.R` | Parameter schematic: one typical control Ca2+ transient and contraction beat with amplitude, rise, decay, CTD50 and CTD90 marked. |
 
 ## Shared utilities (in `../0_setup/`)
 

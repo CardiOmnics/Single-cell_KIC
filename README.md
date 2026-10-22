@@ -45,6 +45,7 @@ Outputs are written under `3_output/Figures/`, `3_output/Tables/` and `3_output/
 | 5 | `5_plot_and_stats.R` | Mixed-effects models, normality checks, correlations, irregular-cell GLMMs, well-average comparison, clustering, within-cluster tests, lipid-loaded vs neighbour comparison, Figures 2, 4, 5, 6, Supplementary Figures 1, 3, 4, statistical results workbook. |
 | 6 | `6_figure3_variance_decomposition.R` | Variance decomposition and well-average vs single-cell panels (Figure 3). |
 | 7 | `7_figure1_trace_illustration.R` | Single-cell trace panels of Figure 1. |
+| 8 | `8_figure1_parameter_schematic.R` | Schematic of the functional parameters on one example Ca2+ transient and contraction beat. |
 
 All scripts are orchestrated by `run_pipeline.R`.
 
@@ -76,7 +77,7 @@ Other numbers in the text come from these sheets of `statistical_results_<date>.
 | `Irregular_Summary`, `Irregular_Tests`, `Irregular_GLMM_FE` | Irregular-cell proportions and GLMM likelihood-ratio tests |
 | `Well_Cross_Cor` | Well-level Spearman correlations between calcium and contraction |
 | `Power_Comparison` | Well-average two-way ANOVA vs single-cell mixed model (Fig. 6A) |
-| `WithinCluster_Direction` | Within-cluster condition effects with direction vs MM (Fig. 6B) |
+| `WithinCluster_Direction` | Within-cluster condition effects with direction vs Control (Fig. 6B) |
 | `Clust_*` | Cluster profiles, composition and Kruskal–Wallis tests (Figs. 4–5) |
 | `LipidLoaded_Test`, `LipidLoaded_PerWell` | Lipid-loaded vs neighbour cells in oleate wells |
 | `Variance_Decomp` | Variance components (Fig. 3A) |

@@ -138,6 +138,14 @@ param_key <- function(spec) {
   paste(spec$data, spec$col, sep = "__")
 }
 
+# Figure strip labels for the two imaging sessions. The manuscript calls them
+# the calcium session and the contraction session; S1/S2 match the
+# "Nucleus area (S1)/(S2)" parameter names.
+session_fig_labels <- c(Calcium     = "Calcium session (S1)",
+                        Contraction = "Contraction session (S2)",
+                        calcium     = "Calcium session (S1)",
+                        contraction = "Contraction session (S2)")
+
 # =============================================================================
 # Section 2: Mixed-effects models (run BEFORE plots so p-values are available)
 # =============================================================================
@@ -278,7 +286,35 @@ qq_panel <- function(resids, title, skew) {
                                     colour = if (skew_ok) "grey20" else "#B2182B"))
 }
 
+# Publication panel for the supplementary Q-Q figure: standardised residuals
+# against normal quantiles. With up to 33,000 cells per model, the curve is
+# drawn from 1,000 evenly spaced quantiles of all residuals (plus the 10 most
+# extreme on each side), which traces the full Q-Q curve without
+# plotting every cell.
+qq_pub_panel <- function(resids, label, scale_lab, skew) {
+  r  <- resids[is.finite(resids)]
+  r  <- (r - mean(r)) / sd(r)
+  n  <- length(r)
+  rs <- sort(r)
+  idx <- unique(c(1:10, round(seq(1, n, length.out = 1000)), (n - 9):n))
+  df <- data.frame(theo = qnorm(ppoints(n))[idx], samp = rs[idx])
+  ggplot(df, aes(theo, samp)) +
+    geom_abline(slope = 1, intercept = 0, colour = "#B2182B", linewidth = 0.4) +
+    geom_point(size = 0.35, colour = "grey25") +
+    # no axis clipping: the full tails are what the reader needs to judge
+    annotate("text", x = -Inf, y = Inf, hjust = -0.08, vjust = 1.2, size = 2.1,
+             colour = "grey35",
+             label = sprintf("%s scale\nskew = %.2f\nn = %s", scale_lab, skew,
+                             format(n, big.mark = ","))) +
+    labs(title = label, x = "Theoretical quantiles",
+         y = "Standardised residuals") +
+    journal_theme +
+    theme(plot.title = element_text(size = 7.5, face = "bold"),
+          axis.title = element_text(size = 7))
+}
+
 all_norm_diag <- list()
+qq_pub <- list()
 
 for (mp in model_params) {
   use_log  <- isTRUE(mp$log)
@@ -323,6 +359,9 @@ for (mp in model_params) {
     resid_ok         = !is.na(skew_resid) && abs(skew_resid) < 1
   )
 
+  qq_pub[[mp_key]] <- qq_pub_panel(resids, mp$label,
+                                    if (use_log) "log10" else "raw", skew_resid)
+
   # Save QQ plot
   p_qq <- qq_panel(resids,
                    sprintf("%s  [%s]", mp$label, if (use_log) "log10" else "raw"),
@@ -339,6 +378,19 @@ for (mp in model_params) {
 }
 
 norm_summary <- bind_rows(all_norm_diag)
+
+# Supplementary figure: residual Q-Q plots of the 13 primary mixed models
+if (length(qq_pub) > 0) {
+  if (!requireNamespace("cowplot", quietly = TRUE)) install.packages("cowplot")
+  qq_fig <- cowplot::plot_grid(plotlist = qq_pub, ncol = 4, align = "hv",
+                               labels = "AUTO", label_size = 9)
+  qq_dir <- file.path(pub_dir, "supp_qq_residuals")
+  dir.create(qq_dir, recursive = TRUE, showWarnings = FALSE)
+  ggsave(file.path(qq_dir, paste0("supp_qq_residuals_", analysis_date, ".pdf")),
+         qq_fig, width = 183, height = 45 * ceiling(length(qq_pub) / 4),
+         units = "mm", device = "pdf")
+  cat("  Saved: supp_qq_residuals\n")
+}
 
 cat("\n  Summary (|skew| < 1 = acceptable for LME; SW p not shown — uninformative at N > 500):\n")
 print(as.data.frame(norm_summary), row.names = FALSE)
@@ -457,10 +509,10 @@ plot_raincloud <- function(data, y_col, y_label, title, log_scale = FALSE,
           TRUE          ~ "ns"
         )
       ) %>%
-      filter(group1 == "MM" | group2 == "MM") %>%
+      filter(group1 == "Control" | group2 == "Control") %>%
       mutate(
-        tmp_g1 = ifelse(group1 == "MM", group1, group2),
-        tmp_g2 = ifelse(group1 == "MM", group2, group1),
+        tmp_g1 = ifelse(group1 == "Control", group1, group2),
+        tmp_g2 = ifelse(group1 == "Control", group2, group1),
         group1 = tmp_g1,
         group2 = tmp_g2
       ) %>%
@@ -471,6 +523,10 @@ plot_raincloud <- function(data, y_col, y_label, title, log_scale = FALSE,
         group_by(Cell_Line) %>%
         mutate(y.position = y_hi + step * row_number()) %>%
         ungroup()
+      # stat_pvalue_manual() takes y.position on the transformed scale, so on a
+      # log10 axis it must be given in log10 units (otherwise the brackets are
+      # drawn far above the panel and silently disappear)
+      if (log_scale) pv$y.position <- log10(pv$y.position)
 
       p <- p + ggpubr::stat_pvalue_manual(
         pv, label = "p.label",
@@ -514,7 +570,7 @@ troponin <- troponin_raw %>%
     ),
     cond_raw  = trimws(gsub("^1\\.6(\\.24)?\\s+", "", short_name)),
     Condition = case_when(
-      cond_raw == "MM"    ~ "MM",
+      cond_raw == "MM"    ~ "Control",
       cond_raw == "PA"    ~ "Palmitate",
       cond_raw == "OL"    ~ "Oleate",
       cond_raw == "PA+OL" ~ "Combination",
@@ -642,7 +698,7 @@ s1_labels <- c("Ca amplitude", "Ca CTD50", "Ca CTD90", "Ca rise", "Ca decay",
 
 cor_s1 <- cor_to_long(calcium_gp, s1_cols, s1_labels)
 if (!is.null(cor_s1)) {
-  p <- plot_cor_heatmap(cor_s1, paste0("Session 1: Calcium + Morphology (n=", cor_s1$n[1], " cells)"))
+  p <- plot_cor_heatmap(cor_s1, paste0("Calcium session (S1), n = ", cor_s1$n[1], " cells"))
   ggsave(file.path(fig_dir, paste0("cor_session1_all_", analysis_date, ".pdf")),
          p, width = 8, height = 7, device = cairo_pdf)
   cat("  Saved: cor_session1_all\n")
@@ -656,7 +712,7 @@ s2_labels <- c("Contr amp", "Contr rise", "Contr decay", "Nuc area (S2)", "Bodip
 
 cor_s2 <- cor_to_long(contraction_gp, s2_cols, s2_labels)
 if (!is.null(cor_s2)) {
-  p <- plot_cor_heatmap(cor_s2, paste0("Session 2: Contraction + Nucleus.Area + Bodipy (n=", cor_s2$n[1], " cells)"))
+  p <- plot_cor_heatmap(cor_s2, paste0("Contraction session (S2), n = ", cor_s2$n[1], " cells"))
   ggsave(file.path(fig_dir, paste0("cor_session2_all_", analysis_date, ".pdf")),
          p, width = 7, height = 6, device = cairo_pdf)
   cat("  Saved: cor_session2_all\n")
@@ -838,7 +894,8 @@ p_well_irreg <- ggplot(well_irreg_all,
   geom_jitter(data = well_irreg_all %>% filter(!well_qc_pass),
               shape = 24, size = 3, width = 0.2,
               fill = "red", colour = "red", alpha = 0.8) +
-  facet_grid(session ~ Cell_Line, labeller = labeller(Cell_Line = cell_line_fig_labeller)) +
+  facet_grid(session ~ Cell_Line, labeller = labeller(Cell_Line = cell_line_fig_labeller,
+                                                      session   = session_fig_labels)) +
   scale_fill_manual(values = group_colors, drop = FALSE) +
   theme_project() +
   labs(title = "Irregular cells per well",
@@ -1162,7 +1219,7 @@ subpop_calcium <- run_subpop_analysis(
 if (!is.null(ca_results_all)) {
   p_ca_traces <- plot_cluster_traces(
     subpop_calcium, ca_cell_params_all, ca_results_all,
-    session_label = "Calcium", y_label = "Calcium signal (baseline-corrected)",
+    session_label = "Calcium", y_label = "Calcium signal (a.u.)",
     n_per_cluster = 8, fig_dir = fig_dir, analysis_date = analysis_date,
     cluster_palette = cluster_colors_calcium
   )
@@ -1171,66 +1228,73 @@ if (!is.null(ca_results_all)) {
   cat("  Skipping calcium cluster traces (step 2 was loaded from RDS)\n")
 }
 
-# --- Calcium cluster figure (combined) ---
-if (!is.null(subpop_calcium)) {
+# --- Cluster figure assembly (Fig. 4 calcium, Fig. 5 contraction) ---
+# Reading order: A = PCA, B = medoid traces, C = composition per condition,
+# D = cluster profile heatmap. The z-score key sits above the heatmap so the
+# bottom row stays balanced. Each panel is also saved on its own, named by
+# its letter in the assembled figure.
+assemble_cluster_figure <- function(subpop, p_traces, fig_name) {
   if (!requireNamespace("cowplot", quietly = TRUE)) install.packages("cowplot")
   library(cowplot)
 
   journal_theme_clust <- journal_theme +
     theme(plot.title = element_blank(), plot.subtitle = element_blank())
 
-  p_A <- subpop_calcium$p_comp    + journal_theme_clust +
+  p_pca  <- subpop$p_pca_clust + journal_theme_clust + theme(legend.position = "bottom")
+  p_comp <- subpop$p_comp      + journal_theme_clust +
     theme(legend.position = "none",
           axis.text.x = element_text(angle = 35, hjust = 1, size = 7))
-  p_B <- subpop_calcium$p_profile + journal_theme_clust +
-    theme(axis.text.x    = element_text(angle = 45, hjust = 1, size = 7),
-          legend.position  = "bottom",
-          legend.direction = "horizontal",
+  p_prof <- subpop$p_profile   + journal_theme_clust +
+    guides(fill = guide_colourbar(title.position = "top", title.hjust = 0.5)) +
+    theme(axis.text.x       = element_text(angle = 45, hjust = 1, size = 7),
+          legend.position   = "top",
+          legend.direction  = "horizontal",
           legend.key.height = unit(2.5, "mm"),
           legend.key.width  = unit(8, "mm"),
           legend.title      = element_text(size = 6),
-          legend.text       = element_text(size = 6))
-  p_C <- subpop_calcium$p_pca_clust + journal_theme_clust + theme(legend.position = "bottom")
+          legend.text       = element_text(size = 6),
+          legend.margin     = margin(0, 0, 0, 0),
+          legend.box.spacing = unit(1, "mm"))
 
-  fig_clust_dir <- file.path(pub_dir, "figure_calcium_clusters")
+  fig_clust_dir <- file.path(pub_dir, fig_name)
   dir.create(fig_clust_dir, recursive = TRUE, showWarnings = FALSE)
 
-  if (!is.null(p_ca_traces)) {
-    p_D <- p_ca_traces + journal_theme_clust +
+  bottom_row <- plot_grid(p_comp, p_prof, ncol = 2, rel_widths = c(1.1, 1),
+                          labels = if (is.null(p_traces)) c("B", "C") else c("C", "D"),
+                          label_size = 9, label_fontface = "bold")
+  if (!is.null(p_traces)) {
+    p_tr <- p_traces + journal_theme_clust +
       theme(strip.text = element_text(size = 9), legend.position = "none")
-
-    top_row <- plot_grid(p_A, p_B, ncol = 2, rel_widths = c(1.1, 1),
-                         labels = c("A", "B"), label_size = 9, label_fontface = "bold")
-    fig_calcium_clusters <- plot_grid(top_row, p_C, p_D, nrow = 3,
-                                      rel_heights = c(1.4, 0.85, 0.9),
-                                      labels = c("", "C", "D"),
-                                      label_size = 9, label_fontface = "bold")
+    fig <- plot_grid(p_pca, p_tr, bottom_row, nrow = 3,
+                     rel_heights = c(0.85, 0.9, 1.4),
+                     labels = c("A", "B", ""),
+                     label_size = 9, label_fontface = "bold")
     fig_h_mm <- 210
   } else {
-    top_row <- plot_grid(p_A, p_B, ncol = 2, rel_widths = c(1.1, 1),
-                         labels = c("A", "B"), label_size = 9, label_fontface = "bold")
-    fig_calcium_clusters <- plot_grid(top_row, p_C, nrow = 2, rel_heights = c(1.5, 0.85),
-                                      labels = c("", "C"),
-                                      label_size = 9, label_fontface = "bold")
+    p_tr <- NULL
+    fig <- plot_grid(p_pca, bottom_row, nrow = 2, rel_heights = c(0.85, 1.5),
+                     labels = c("A", ""), label_size = 9, label_fontface = "bold")
     fig_h_mm <- 150
-    cat("  Panel D omitted: no trace data (run pipeline with run_calcium = TRUE)\n")
+    cat("  Trace panel omitted: no trace data (run pipeline with run_calcium/run_contraction = TRUE)\n")
   }
 
-  ggsave(file.path(fig_clust_dir, "figure_calcium_clusters.pdf"),
-         fig_calcium_clusters,
+  ggsave(file.path(fig_clust_dir, paste0(fig_name, ".pdf")), fig,
          width = 183, height = fig_h_mm, units = "mm", device = "pdf")
-  ggsave(file.path(fig_clust_dir, "figure_calcium_clusters_A.pdf"),
-         p_A, width = 89, height = 80, units = "mm", device = "pdf")
-  ggsave(file.path(fig_clust_dir, "figure_calcium_clusters_B.pdf"),
-         p_B, width = 89, height = 70, units = "mm", device = "pdf")
-  ggsave(file.path(fig_clust_dir, "figure_calcium_clusters_C.pdf"),
-         p_C, width = 183, height = 80, units = "mm", device = "pdf")
-  if (!is.null(p_ca_traces)) {
-    ggsave(file.path(fig_clust_dir, "figure_calcium_clusters_D.pdf"),
-           p_D, width = 183, height = 70, units = "mm", device = "pdf")
-  }
-  cat("  Saved: figure_calcium_clusters (", fig_h_mm, "mm tall)\n")
+  ggsave(file.path(fig_clust_dir, paste0(fig_name, "_A_pca.pdf")),
+         p_pca, width = 183, height = 80, units = "mm", device = "pdf")
+  if (!is.null(p_tr))
+    ggsave(file.path(fig_clust_dir, paste0(fig_name, "_B_traces.pdf")),
+           p_tr, width = 183, height = 70, units = "mm", device = "pdf")
+  ggsave(file.path(fig_clust_dir, paste0(fig_name, "_C_composition.pdf")),
+         p_comp, width = 89, height = 80, units = "mm", device = "pdf")
+  ggsave(file.path(fig_clust_dir, paste0(fig_name, "_D_profiles.pdf")),
+         p_prof, width = 89, height = 75, units = "mm", device = "pdf")
+  cat("  Saved:", fig_name, "(", fig_h_mm, "mm tall)\n")
+  invisible(fig)
 }
+
+if (!is.null(subpop_calcium))
+  assemble_cluster_figure(subpop_calcium, p_ca_traces, "figure_calcium_clusters")
 
 # --- Run for Session 2: Contraction + Nucleus.Area + Bodipy ---
 cat("\n  Session 2: Contraction + Nucleus.Area + Bodipy\n")
@@ -1260,66 +1324,9 @@ if (!is.null(contr_results_all)) {
   cat("  Skipping contraction cluster traces (step 1 was loaded from RDS)\n")
 }
 
-# --- Contraction cluster figure (combined) ---
-if (!is.null(subpop_contraction)) {
-  if (!requireNamespace("cowplot", quietly = TRUE)) install.packages("cowplot")
-  library(cowplot)
-
-  journal_theme_clust <- journal_theme +
-    theme(plot.title = element_blank(), plot.subtitle = element_blank())
-
-  p_A <- subpop_contraction$p_comp    + journal_theme_clust +
-    theme(legend.position = "none",
-          axis.text.x = element_text(angle = 35, hjust = 1, size = 7))
-  p_B <- subpop_contraction$p_profile + journal_theme_clust +
-    theme(axis.text.x    = element_text(angle = 45, hjust = 1, size = 7),
-          legend.position  = "bottom",
-          legend.direction = "horizontal",
-          legend.key.height = unit(2.5, "mm"),
-          legend.key.width  = unit(8, "mm"),
-          legend.title      = element_text(size = 6),
-          legend.text       = element_text(size = 6))
-  p_C <- subpop_contraction$p_pca_clust + journal_theme_clust + theme(legend.position = "bottom")
-
-  fig_clust_dir <- file.path(pub_dir, "figure_contraction_clusters")
-  dir.create(fig_clust_dir, recursive = TRUE, showWarnings = FALSE)
-
-  if (!is.null(p_contr_traces)) {
-    p_D <- p_contr_traces + journal_theme_clust +
-      theme(strip.text = element_text(size = 9), legend.position = "none")
-
-    top_row <- plot_grid(p_A, p_B, ncol = 2, rel_widths = c(1.1, 1),
-                         labels = c("A", "B"), label_size = 9, label_fontface = "bold")
-    fig_contraction_clusters <- plot_grid(top_row, p_C, p_D, nrow = 3,
-                                          rel_heights = c(1.4, 0.85, 0.9),
-                                          labels = c("", "C", "D"),
-                                          label_size = 9, label_fontface = "bold")
-    fig_h_mm <- 210
-  } else {
-    top_row <- plot_grid(p_A, p_B, ncol = 2, rel_widths = c(1.1, 1),
-                         labels = c("A", "B"), label_size = 9, label_fontface = "bold")
-    fig_contraction_clusters <- plot_grid(top_row, p_C, nrow = 2, rel_heights = c(1.5, 0.85),
-                                          labels = c("", "C"),
-                                          label_size = 9, label_fontface = "bold")
-    fig_h_mm <- 150
-    cat("  Panel D omitted: no trace data (run pipeline with run_contraction = TRUE)\n")
-  }
-
-  ggsave(file.path(fig_clust_dir, "figure_contraction_clusters.pdf"),
-         fig_contraction_clusters,
-         width = 183, height = fig_h_mm, units = "mm", device = "pdf")
-  ggsave(file.path(fig_clust_dir, "figure_contraction_clusters_A.pdf"),
-         p_A, width = 89, height = 80, units = "mm", device = "pdf")
-  ggsave(file.path(fig_clust_dir, "figure_contraction_clusters_B.pdf"),
-         p_B, width = 89, height = 70, units = "mm", device = "pdf")
-  ggsave(file.path(fig_clust_dir, "figure_contraction_clusters_C.pdf"),
-         p_C, width = 183, height = 80, units = "mm", device = "pdf")
-  if (!is.null(p_contr_traces)) {
-    ggsave(file.path(fig_clust_dir, "figure_contraction_clusters_D.pdf"),
-           p_D, width = 183, height = 70, units = "mm", device = "pdf")
-  }
-  cat("  Saved: figure_contraction_clusters (", fig_h_mm, "mm tall)\n")
-}
+# --- Contraction cluster figure (combined; layout as Fig. 4) ---
+if (!is.null(subpop_contraction))
+  assemble_cluster_figure(subpop_contraction, p_contr_traces, "figure_contraction_clusters")
 
 # ---- 6b continued: Two-panel power comparison figure (Figure 6) ----
 # Panel A: well-average vs single-cell mixed model p-values per parameter.
@@ -1400,8 +1407,8 @@ if (nrow(wellavg_vs_mixed) > 0) {
         # P values alone do not say whether conditions move a parameter up or
         # down within a cluster (needed to judge e.g. "opposing effects across
         # subpopulations"). Export per-condition means on the original scale
-        # and the % difference vs MM. Mixed model: estimated marginal means
-        # averaged over cell line, Dunnett-adjusted contrasts vs MM.
+        # and the % difference vs Control. Mixed model: estimated marginal means
+        # averaged over cell line, Dunnett-adjusted contrasts vs Control.
         # KW fallback: median of per-well means, no contrast P values.
         back <- if (isTRUE(mp$log)) function(x) 10^x else identity
         dir_tbl <- if (!used_fallback) {
@@ -1409,22 +1416,22 @@ if (nrow(wellavg_vs_mixed) > 0) {
           if (is.null(em)) NULL else {
             em_df <- as.data.frame(em)
             ctr <- as.data.frame(emmeans::contrast(em, method = "trt.vs.ctrl",
-                                                   ref = which(levels(em_df$Condition) == "MM"),
+                                                   ref = which(levels(em_df$Condition) == "Control"),
                                                    adjust = "dunnett"))
-            ctr$Condition <- sub(" - MM$", "", ctr$contrast)
-            mm_mean <- back(em_df$emmean[em_df$Condition == "MM"])
+            ctr$Condition <- sub(" - Control$", "", ctr$contrast)
+            mm_mean <- back(em_df$emmean[em_df$Condition == "Control"])
             em_df %>%
               transmute(Condition = as.character(Condition), mean = back(emmean)) %>%
-              left_join(ctr %>% select(Condition, p_vs_MM = p.value), by = "Condition") %>%
-              mutate(pct_vs_MM = 100 * (mean / mm_mean - 1))
+              left_join(ctr %>% select(Condition, p_vs_Control = p.value), by = "Condition") %>%
+              mutate(pct_vs_Control = 100 * (mean / mm_mean - 1))
           }
         } else {
           wm <- sub_k %>% group_by(well_uid, Condition) %>%
             summarise(y = mean(y), .groups = "drop") %>%
             group_by(Condition) %>% summarise(mean = back(median(y)), .groups = "drop")
-          mm_mean <- wm$mean[wm$Condition == "MM"]
-          wm %>% mutate(Condition = as.character(Condition), p_vs_MM = NA_real_,
-                        pct_vs_MM = if (length(mm_mean)) 100 * (mean / mm_mean - 1) else NA_real_)
+          mm_mean <- wm$mean[wm$Condition == "Control"]
+          wm %>% mutate(Condition = as.character(Condition), p_vs_Control = NA_real_,
+                        pct_vs_Control = if (length(mm_mean)) 100 * (mean / mm_mean - 1) else NA_real_)
         }
         if (!is.null(dir_tbl)) {
           wc_direction_rows[[length(wc_direction_rows) + 1]] <<- dir_tbl %>%
@@ -1469,9 +1476,20 @@ if (nrow(wellavg_vs_mixed) > 0) {
   # so each session forms a contiguous block on the y axis)
   param_levels <- rev(wellavg_vs_mixed$parameter)
 
-  # Pretty session labels for the horizontal facet strips
-  session_levels <- c("contraction", "calcium")
-  session_labels <- c(contraction = "Contraction", calcium = "Calcium")
+  # Session strips: calcium session on top, contraction session below
+  session_levels <- c("calcium", "contraction")
+  # (two lines, because these strips are horizontal and narrow)
+  session_labels <- sub(" session", "\nsession", session_fig_labels[session_levels])
+  # Panel B legend keys keep the short session name ("Calcium cluster 2")
+  session_short  <- c(calcium = "Calcium", contraction = "Contraction")
+
+  # Legend order: well-average model first, then the single-cell mixed model.
+  # The mixed model is drawn in purple, as stated in the figure legend.
+  method_levels <- c("Well-average LM", "Single-cell mixed model")
+  method_colors <- c("Well-average LM"         = "#999999",
+                     "Single-cell mixed model" = "#7B3294")
+  method_shapes <- c("Well-average LM"         = 17,
+                     "Single-cell mixed model" = 16)
 
   # Journal theme for both panels; horizontal strip on top of each sub-row
   pwr_theme <- theme_bw() +
@@ -1501,9 +1519,10 @@ if (nrow(wellavg_vs_mixed) > 0) {
       parameter,
       session = factor(session, levels = session_levels),
       neg_log_p = -log10(pvalue + 1e-20),
-      method    = ifelse(m == "p_wellavg",
-                         "Well-average LM",
-                         "Single-cell mixed model")
+      method    = factor(ifelse(m == "p_wellavg",
+                                "Well-average LM",
+                                "Single-cell mixed model"),
+                         levels = method_levels)
     ) %>%
     mutate(param_order = factor(parameter, levels = param_levels))
 
@@ -1515,16 +1534,8 @@ if (nrow(wellavg_vs_mixed) > 0) {
                color = "grey50", linewidth = 0.5) +
     facet_grid(session ~ ., scales = "free_y", space = "free_y",
                labeller = labeller(session = session_labels)) +
-    scale_color_manual(
-      values = c("Well-average LM"          = "#999999",
-                 "Single-cell mixed model"   = "#000000"),
-      name = NULL
-    ) +
-    scale_shape_manual(
-      values = c("Well-average LM"          = 17,
-                 "Single-cell mixed model"   = 16),
-      name = NULL
-    ) +
+    scale_color_manual(values = method_colors, breaks = method_levels, name = NULL) +
+    scale_shape_manual(values = method_shapes, breaks = method_levels, name = NULL) +
     pwr_theme +
     labs(
       x = expression(-log[10](italic(p))),
@@ -1538,7 +1549,7 @@ if (nrow(wellavg_vs_mixed) > 0) {
     mutate(param_order  = factor(parameter, levels = param_levels),
            session      = factor(session, levels = session_levels),
            cluster_num  = as.integer(gsub("Cluster (\\d+)", "\\1", method)),
-           cluster_key  = paste0(session_labels[as.character(session)],
+           cluster_key  = paste0(session_short[as.character(session)],
                                  " cluster ", cluster_num))
 
   clust_key_tbl <- wc_plot_data %>%
@@ -1611,13 +1622,58 @@ if (nrow(wellavg_vs_mixed) > 0) {
 }
 
 # =============================================================================
+# Section 6d: Supplementary figure, cell and nuclear size
+# =============================================================================
+# Cell area, nucleus area (both sessions) and N/C ratio per condition and line,
+# with the mixed-model post hoc contrasts vs Control (as in the violin plots)
+# and the cell-line main effect of the same model printed in each panel.
+cat("\n--- Section 6d: Supplementary cell/nucleus size figure ---\n")
+
+size_specs <- list(
+  list(col = "Cell.Area",    data = "calcium",     log = TRUE,
+       label = "Cell area (\u00B5m\u00B2)",          title = "Cell area"),
+  list(col = "Nucleus.Area", data = "calcium",     log = TRUE,
+       label = "Nucleus area (\u00B5m\u00B2)",       title = "Nucleus area, calcium session (S1)"),
+  list(col = "NC_ratio",     data = "calcium",     log = FALSE,
+       label = "N/C area ratio",                       title = "Nucleus-to-cytoplasm ratio"),
+  list(col = "Nucleus.Area", data = "contraction", log = TRUE,
+       label = "Nucleus area (\u00B5m\u00B2)",       title = "Nucleus area, contraction session (S2)")
+)
+
+size_panels <- lapply(size_specs, function(sp) {
+  key <- param_key(sp)
+  src <- if (sp$data == "calcium") calcium_gp else contraction_gp
+  aov <- all_anova[[key]]
+  line_row <- aov[aov$term == "Cell_Line", ]
+  line_lab <- sprintf("Cell line: F(1, %.1f) = %.1f, P = %s",
+                      line_row$DenDF, line_row$`F value`,
+                      format.pval(line_row$`Pr(>F)`, digits = 2))
+  plot_raincloud(src, sp$col, sp$label, sp$title,
+                 log_scale = sp$log, posthoc_df = all_posthoc[[key]]) +
+    journal_theme +
+    labs(subtitle = line_lab) +
+    theme(axis.text.x   = element_text(angle = 35, hjust = 1),
+          plot.title    = element_text(size = 8, face = "bold"),
+          plot.subtitle = element_text(size = 6.5, colour = "grey30"),
+          legend.position = "none")
+})
+if (!requireNamespace("cowplot", quietly = TRUE)) install.packages("cowplot")
+supp_size <- cowplot::plot_grid(plotlist = size_panels, ncol = 1,
+                                labels = "AUTO", label_size = 9)
+size_dir <- file.path(pub_dir, "supp_cell_nucleus_size")
+dir.create(size_dir, recursive = TRUE, showWarnings = FALSE)
+ggsave(file.path(size_dir, paste0("supp_cell_nucleus_size_", analysis_date, ".pdf")),
+       supp_size, width = 183, height = 260, units = "mm", device = cairo_pdf)
+cat("  Saved: supp_cell_nucleus_size\n")
+
+# =============================================================================
 # Section 6c: Lipid-loaded cells vs their neighbours in oleate wells
 # =============================================================================
 # BODIPY and contraction come from the same cells (session 2), so within one
 # well lipid-loaded cells can be compared with the unloaded cells next to them.
 # Both groups share medium and imaging conditions, which removes between-well
 # variation from the comparison.
-#   - Lipid-loaded = BODIPY intensity > 2x the median of MM (control) cells of
+#   - Lipid-loaded = BODIPY intensity > 2x the median of Control cells of
 #     the same cell line.
 #   - Per oleate well: difference in mean log10(parameter), loaded minus other.
 #   - Test: one-sample t test of the per-well differences against 0, so the
@@ -1634,7 +1690,7 @@ ll_params    <- c(contr_amp      = "Contraction amplitude",
                   contr_decay_ms = "Contraction decay time")
 
 ll_threshold <- contraction_gp %>%
-  filter(Condition == "MM") %>%
+  filter(Condition == "Control") %>%
   group_by(Cell_Line) %>%
   summarise(bodipy_threshold = ll_fold * median(Bodipy_intensity, na.rm = TRUE),
             .groups = "drop")
@@ -1886,7 +1942,7 @@ if (exists("wellavg_vs_mixed") && nrow(wellavg_vs_mixed) > 0) {
 if (exists("wc_direction_rows") && length(wc_direction_rows) > 0) {
   within_cluster_direction <- bind_rows(wc_direction_rows)
   sheets[["WithinCluster_Direction"]] <- list(df = within_cluster_direction,
-                                              p_cols = c("p_condition", "p_vs_MM"))
+                                              p_cols = c("p_condition", "p_vs_Control"))
 }
 
 # Lipid-loaded vs neighbour cells in oleate wells (Section 6c)

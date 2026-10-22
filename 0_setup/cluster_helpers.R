@@ -269,7 +269,9 @@ run_subpop_analysis <- function(data, param_cols, param_labels,
           kt$p.value < 0.05  ~ "*",
           TRUE               ~ "ns"
         ),
-        n_wells = n_distinct(.x$well_uid)
+        # count(.drop = FALSE) adds empty Condition x Cell_Line rows (pct = NaN)
+        # for every well; kruskal.test drops them, so count only real wells
+        n_wells = n_distinct(.x$well_uid[is.finite(.x$pct)])
       )
     }, .keep = TRUE) %>%
     bind_rows()

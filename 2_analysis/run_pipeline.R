@@ -119,6 +119,9 @@ if (run_contraction) {
   }
 }
 
+# Control is coded "MM" in the plate maps; relabel to "Control" (see colors.R)
+contr_cell_params_all <- relabel_condition(contr_cell_params_all)
+
 # Apply contraction well exclusions (runs whether data was freshly
 # processed or loaded from disk, so exclusions are always enforced)
 if (length(contr_exclude_wells) > 0) {
@@ -200,6 +203,9 @@ if (run_calcium) {
         "run step 2 once to save it)\n\n")
   }
 }
+
+# Control is coded "MM" in the plate maps; relabel to "Control" (see colors.R)
+ca_cell_params_all <- relabel_condition(ca_cell_params_all)
 
 # Apply calcium well exclusions (runs whether data was freshly
 # processed or loaded from disk, so exclusions are always enforced)
@@ -440,6 +446,8 @@ if (run_figures) {
   cat("\nSTEP 7: Figure 1 trace panels...\n")
   cat("────────────────────────────────────────\n")
   source("7_figure1_trace_illustration.R")
+  cat("\nSTEP 3d: Generating parameter schematic (example Ca2+ and contraction beat)...\n")
+  source("8_figure1_parameter_schematic.R", local = new.env(parent = globalenv()))
 } else {
   cat("STEPS 5-7: Skipped (run_figures = FALSE)\n\n")
 }
